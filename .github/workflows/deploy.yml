@@ -30,7 +30,7 @@ jobs:
       - name: Build web
         run: |
           flutter build web --release \
-            --base-href /flutter_application_1/ \
+            --base-href /pr6/ \
             --dart-define=API_BASE_URL=http://localhost:8080/api
 
       - name: Copy 404.html
