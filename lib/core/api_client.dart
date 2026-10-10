@@ -91,9 +91,6 @@ class _RefreshInterceptor extends Interceptor {
       if (ok) {
         try {
           final options = err.requestOptions;
-          // Заголовок Authorization обновится в onRequest,
-          // но если интерсептор чтения токена ещё не сработал,
-          // проставим вручную.
           final token = options.headers['Authorization'];
           if (kDebugMode) {
             debugPrint('[API ↻] повтор запроса с токеном: $token');
@@ -118,14 +115,21 @@ class RetryInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    final isRead = err.requestOptions.method == 'GET';
+    final path = err.requestOptions.path;
+    final method = err.requestOptions.method;
+
+    // /auth/* не ретраим: сессия не восстановится повтором,
+    // а пользователь просто дольше ждёт. Особенно важно для /auth/me
+    // на старте приложения — ретраи там только увеличивают задержку.
+    final isAuthCall = path.contains('/auth/');
+    final isRead = method == 'GET';
     final isNetwork =
         err.type == DioExceptionType.connectionError ||
         err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.receiveTimeout;
     final attempt = (err.requestOptions.extra['retryAttempt'] as int?) ?? 0;
 
-    if (!isRead || !isNetwork || attempt >= maxAttempts) {
+    if (isAuthCall || !isRead || !isNetwork || attempt >= maxAttempts) {
       return handler.next(err);
     }
 

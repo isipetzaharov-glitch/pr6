@@ -1,7 +1,10 @@
 // lib/main.dart
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,7 +25,15 @@ import 'widgets/inactivity_watcher.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  usePathUrlStrategy();
+
+  // usePathUrlStrategy может бросить исключение, если в web/index.html
+  // тег <base> без завершающего слэша. Оборачиваем в try/catch,
+  // чтобы приложение всё равно запустилось.
+  try {
+    usePathUrlStrategy();
+  } catch (e) {
+    debugPrint('usePathUrlStrategy failed: $e');
+  }
 
   final prefs = await SharedPreferences.getInstance();
 
@@ -44,7 +55,10 @@ void main() async {
 
   authApi = AuthApi(dio);
   auth = AuthNotifier(prefs, authApi);
-  await auth.restore();
+
+  // Не блокируем runApp на сетевом запросе: восстановление сессии
+  // идёт в фоне, UI показывается сразу.
+  unawaited(auth.restore());
 
   runApp(
     MultiProvider(
@@ -86,18 +100,56 @@ void main() async {
   );
 }
 
-class AutoServiceApp extends StatelessWidget {
+class AutoServiceApp extends StatefulWidget {
   const AutoServiceApp({super.key});
+
+  @override
+  State<AutoServiceApp> createState() => _AutoServiceAppState();
+}
+
+class _AutoServiceAppState extends State<AutoServiceApp> {
+  GoRouter? _router;
+  AuthNotifier? _authForRouter;
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthNotifier>();
-    final router = buildRouter(auth);
+
+    // Пока восстановление сессии не завершено — свой Material-экран
+    // загрузки. Это гарантирует, что Flutter построил первый кадр.
+    if (!auth.restored) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Автосервис',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 16),
+                CircularProgressIndicator(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // GoRouter создаём один раз и переиспользуем.
+    // Новый экземпляр создаётся только если AuthNotifier подменили
+    // (в этом проекте такого не происходит, но проверка есть).
+    if (_router == null || _authForRouter != auth) {
+      _authForRouter = auth;
+      _router = buildRouter(auth);
+    }
 
     return MaterialApp.router(
       title: 'Автосервис',
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
-      routerConfig: router,
+      routerConfig: _router!,
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
         if (!auth.isAuthenticated) return content;
@@ -116,9 +168,6 @@ class AutoServiceApp extends StatelessWidget {
             );
           },
           onTimeout: () async {
-            // Только выход. Роутер сам редиректит на /login,
-            // потому что auth.isAuthenticated станет false
-            // и сработает refreshListenable.
             await auth.logout();
           },
           child: content,

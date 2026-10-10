@@ -36,8 +36,6 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   String? _loadError;
   bool _dirty = false;
 
-  /// Ошибки, пришедшие с сервера (422).
-  /// Ключи совпадают с именами полей модели.
   Map<String, String> _serverErrors = {};
 
   @override
@@ -47,7 +45,6 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   }
 
   Future<void> _load() async {
-    // context.read — ДО первого await
     final dict = context.read<DictionariesNotifier>();
     final repo = context.read<OrderRepository>();
 
@@ -138,13 +135,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
       _snack(widget.isEditing ? 'Изменения сохранены' : 'Заказ создан');
       _goBack();
     } on ValidationException catch (e) {
-      // 422 — ошибки по полям. Разложим их рядом с соответствующими полями.
       if (!mounted) return;
       setState(() => _serverErrors = e.errors);
       _formKey.currentState!.validate();
       _snack('Проверьте выделенные поля');
     } on ConflictException catch (e) {
-      // 409 — уникальность, целостность и т.п.
       if (!mounted) return;
       _snack(e.message);
     } on UnauthorizedException catch (e) {
@@ -165,16 +160,16 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   Future<bool> _confirmExit() async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Есть несохранённые изменения'),
         content: const Text('Уйти без сохранения?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('Остаться'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('Уйти'),
           ),
         ],
@@ -225,202 +220,208 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
             onPressed: _handleBack,
           ),
         ),
-        body: Form(
-          key: _formKey,
-          onChanged: _markDirty,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              TextFormField(
-                controller: _titleCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Название работ *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['title'],
-                ),
-                validator: (v) {
-                  final r = Validators.required(v, field: 'Название');
-                  if (r != null) return r;
-                  return Validators.maxLength(v, 100, field: 'Название');
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _vinCtrl,
-                decoration: InputDecoration(
-                  labelText: 'VIN *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['vin'],
-                ),
-                validator: (v) {
-                  if (_serverErrors['vin'] != null) return _serverErrors['vin'];
-                  return Validators.vin(v);
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _yearCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Год выпуска *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['year'],
-                ),
-                validator: (v) {
-                  if (_serverErrors['year'] != null) {
-                    return _serverErrors['year'];
-                  }
-                  return Validators.intRange(v, 1970, 2100, field: 'Год');
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _costCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: 'Стоимость, ₽ *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['cost'],
-                ),
-                validator: (v) {
-                  if (_serverErrors['cost'] != null) {
-                    return _serverErrors['cost'];
-                  }
-                  return Validators.positiveDouble(v, field: 'Стоимость');
-                },
-              ),
-
-              const SizedBox(height: 16),
-              const Divider(),
-              const Text(
-                'Связи',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-
-              DropdownButtonFormField<int>(
-                initialValue: _clientId,
-                decoration: InputDecoration(
-                  labelText: 'Клиент *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['clientId'],
-                ),
-                items: dict.clients
-                    .map(
-                      (c) => DropdownMenuItem(
-                        value: c.id,
-                        child: Text(c.fullName),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  setState(() => _clientId = v);
-                  _markDirty();
-                },
-                validator: (v) => v == null ? 'Выберите клиента' : null,
-              ),
-              const SizedBox(height: 12),
-
-              DropdownButtonFormField<int>(
-                initialValue: _masterId,
-                decoration: InputDecoration(
-                  labelText: 'Мастер *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['masterId'],
-                ),
-                items: dict.masters
-                    .map(
-                      (m) => DropdownMenuItem(
-                        value: m.id,
-                        child: Text(m.fullName),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) {
-                  setState(() => _masterId = v);
-                  _markDirty();
-                },
-                validator: (v) => v == null ? 'Выберите мастера' : null,
-              ),
-              const SizedBox(height: 12),
-
-              FormField<List<int>>(
-                initialValue: _serviceIds,
-                validator: (v) {
-                  if (_serverErrors['serviceIds'] != null) {
-                    return _serverErrors['serviceIds'];
-                  }
-                  return (v == null || v.isEmpty)
-                      ? 'Выберите хотя бы одну услугу'
-                      : null;
-                },
-                builder: (field) {
-                  return InputDecorator(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Form(
+              key: _formKey,
+              onChanged: _markDirty,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  TextFormField(
+                    controller: _titleCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Услуги *',
+                      labelText: 'Название работ *',
                       border: const OutlineInputBorder(),
-                      errorText: field.errorText,
+                      errorText: _serverErrors['title'],
                     ),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: dict.serviceTypes.map((s) {
-                        final selected = field.value!.contains(s.id);
-                        return FilterChip(
-                          label: Text(s.name),
-                          selected: selected,
-                          onSelected: (_) {
-                            final next = [...field.value!];
-                            selected ? next.remove(s.id) : next.add(s.id);
-                            field.didChange(next);
-                            setState(() => _serviceIds = next);
-                            _markDirty();
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-
-              DropdownButtonFormField<String>(
-                initialValue: _status,
-                decoration: InputDecoration(
-                  labelText: 'Статус *',
-                  border: const OutlineInputBorder(),
-                  errorText: _serverErrors['status'],
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'new', child: Text('Новый')),
-                  DropdownMenuItem(
-                    value: 'in_progress',
-                    child: Text('В работе'),
+                    validator: (v) {
+                      final r = Validators.required(v, field: 'Название');
+                      if (r != null) return r;
+                      return Validators.maxLength(v, 100, field: 'Название');
+                    },
                   ),
-                  DropdownMenuItem(value: 'done', child: Text('Завершён')),
-                ],
-                onChanged: (v) {
-                  setState(() => _status = v ?? 'new');
-                  _markDirty();
-                },
-              ),
-              const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _vinCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'VIN *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['vin'],
+                    ),
+                    validator: (v) {
+                      if (_serverErrors['vin'] != null) {
+                        return _serverErrors['vin'];
+                      }
+                      return Validators.vin(v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _yearCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Год выпуска *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['year'],
+                    ),
+                    validator: (v) {
+                      if (_serverErrors['year'] != null) {
+                        return _serverErrors['year'];
+                      }
+                      return Validators.intRange(v, 1970, 2100, field: 'Год');
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _costCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Стоимость, ₽ *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['cost'],
+                    ),
+                    validator: (v) {
+                      if (_serverErrors['cost'] != null) {
+                        return _serverErrors['cost'];
+                      }
+                      return Validators.positiveDouble(v, field: 'Стоимость');
+                    },
+                  ),
 
-              FilledButton.icon(
-                // Пункт 16: кнопка заблокирована во время сохранения.
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save),
-                label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const Text(
+                    'Связи',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  DropdownButtonFormField<int>(
+                    initialValue: _clientId,
+                    decoration: InputDecoration(
+                      labelText: 'Клиент *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['clientId'],
+                    ),
+                    items: dict.clients
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c.id,
+                            child: Text(c.fullName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() => _clientId = v);
+                      _markDirty();
+                    },
+                    validator: (v) => v == null ? 'Выберите клиента' : null,
+                  ),
+                  const SizedBox(height: 12),
+
+                  DropdownButtonFormField<int>(
+                    initialValue: _masterId,
+                    decoration: InputDecoration(
+                      labelText: 'Мастер *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['masterId'],
+                    ),
+                    items: dict.masters
+                        .map(
+                          (m) => DropdownMenuItem(
+                            value: m.id,
+                            child: Text(m.fullName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      setState(() => _masterId = v);
+                      _markDirty();
+                    },
+                    validator: (v) => v == null ? 'Выберите мастера' : null,
+                  ),
+                  const SizedBox(height: 12),
+
+                  FormField<List<int>>(
+                    initialValue: _serviceIds,
+                    validator: (v) {
+                      if (_serverErrors['serviceIds'] != null) {
+                        return _serverErrors['serviceIds'];
+                      }
+                      return (v == null || v.isEmpty)
+                          ? 'Выберите хотя бы одну услугу'
+                          : null;
+                    },
+                    builder: (field) {
+                      return InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: 'Услуги *',
+                          border: const OutlineInputBorder(),
+                          errorText: field.errorText,
+                        ),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: dict.serviceTypes.map((s) {
+                            final selected = field.value!.contains(s.id);
+                            return FilterChip(
+                              label: Text(s.name),
+                              selected: selected,
+                              onSelected: (_) {
+                                final next = [...field.value!];
+                                selected ? next.remove(s.id) : next.add(s.id);
+                                field.didChange(next);
+                                setState(() => _serviceIds = next);
+                                _markDirty();
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  DropdownButtonFormField<String>(
+                    initialValue: _status,
+                    decoration: InputDecoration(
+                      labelText: 'Статус *',
+                      border: const OutlineInputBorder(),
+                      errorText: _serverErrors['status'],
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'new', child: Text('Новый')),
+                      DropdownMenuItem(
+                        value: 'in_progress',
+                        child: Text('В работе'),
+                      ),
+                      DropdownMenuItem(value: 'done', child: Text('Завершён')),
+                    ],
+                    onChanged: (v) {
+                      setState(() => _status = v ?? 'new');
+                      _markDirty();
+                    },
+                  ),
+                  const SizedBox(height: 24),
+
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

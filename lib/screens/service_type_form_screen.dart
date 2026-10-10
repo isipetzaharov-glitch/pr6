@@ -84,38 +84,43 @@ class _ServiceTypeFormScreenState extends State<ServiceTypeFormScreen> {
           widget.isEditing ? 'Редактирование услуги' : 'Новая услуга',
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: InputDecoration(
-                labelText: 'Название услуги *',
-                border: const OutlineInputBorder(),
-                errorText: _serverError,
-              ),
-              validator: (v) {
-                if (_serverError != null) return _serverError;
-                final r = Validators.required(v, field: 'Название');
-                if (r != null) return r;
-                return Validators.maxLength(v, 60, field: 'Название');
-              },
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Название услуги *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverError,
+                  ),
+                  validator: (v) {
+                    if (_serverError != null) return _serverError;
+                    final r = Validators.required(v, field: 'Название');
+                    if (r != null) return r;
+                    return Validators.maxLength(v, 60, field: 'Название');
+                  },
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
-            ),
-          ],
+          ),
         ),
       ),
     );

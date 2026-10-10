@@ -33,11 +33,7 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
 
   bool _loading = true;
   bool _saving = false;
-
-  /// Ошибки с сервера (422) по полям.
   Map<String, String> _serverErrors = {};
-
-  /// Локальная проверка уникальности email (предварительная, до сохранения).
   String? _uniqueEmailError;
 
   @override
@@ -94,7 +90,6 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
     final repo = context.read<ClientRepository>();
     final email = _emailCtrl.text.trim();
 
-    // Предварительная проверка уникальности email (пункт 12 ПР3).
     try {
       final exists = await repo.emailExists(email, exceptId: widget.id);
       if (exists) {
@@ -102,7 +97,7 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
         return;
       }
     } on ApiException {
-      // Сервер не поддерживает проверку — не блокируем, проверит 422/409.
+      // не блокируем, проверит 422/409
     }
 
     if (!_formKey.currentState!.validate()) return;
@@ -162,140 +157,147 @@ class _ClientFormScreenState extends State<ClientFormScreen> {
           widget.isEditing ? 'Редактирование клиента' : 'Новый клиент',
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _lastNameCtrl,
-              decoration: InputDecoration(
-                labelText: 'Фамилия *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['lastName'],
-              ),
-              validator: (v) {
-                if (_serverErrors['lastName'] != null) {
-                  return _serverErrors['lastName'];
-                }
-                final r = Validators.required(v, field: 'Фамилия');
-                if (r != null) return r;
-                return Validators.maxLength(v, 50, field: 'Фамилия');
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _firstNameCtrl,
-              decoration: InputDecoration(
-                labelText: 'Имя *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['firstName'],
-              ),
-              validator: (v) {
-                if (_serverErrors['firstName'] != null) {
-                  return _serverErrors['firstName'];
-                }
-                return Validators.required(v, field: 'Имя');
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _emailCtrl,
-              decoration: InputDecoration(
-                labelText: 'Email *',
-                border: const OutlineInputBorder(),
-                // Сначала серверная ошибка, потом локальная уникальность.
-                errorText: _serverErrors['email'] ?? _uniqueEmailError,
-              ),
-              validator: (v) {
-                if (_serverErrors['email'] != null) {
-                  return _serverErrors['email'];
-                }
-                return Validators.email(v);
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phoneCtrl,
-              decoration: InputDecoration(
-                labelText: 'Телефон *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['phone'],
-              ),
-              validator: (v) {
-                if (_serverErrors['phone'] != null) {
-                  return _serverErrors['phone'];
-                }
-                return Validators.phone(v);
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _countryCtrl,
-              decoration: InputDecoration(
-                labelText: 'Страна *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['country'],
-              ),
-              validator: (v) {
-                if (_serverErrors['country'] != null) {
-                  return _serverErrors['country'];
-                }
-                return Validators.required(v, field: 'Страна');
-              },
-            ),
-
-            const SizedBox(height: 16),
-            const Divider(),
-            SwitchListTile(
-              title: const Text('Есть сервисная карта'),
-              subtitle: const Text('Связь 1-к-1'),
-              value: _hasCard,
-              onChanged: (v) => setState(() => _hasCard = v),
-            ),
-
-            if (_hasCard) ...[
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _cardNumberCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Номер карты *',
-                  border: OutlineInputBorder(),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextFormField(
+                  controller: _lastNameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Фамилия *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['lastName'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['lastName'] != null) {
+                      return _serverErrors['lastName'];
+                    }
+                    final r = Validators.required(v, field: 'Фамилия');
+                    if (r != null) return r;
+                    return Validators.maxLength(v, 50, field: 'Фамилия');
+                  },
                 ),
-                validator: (v) => _hasCard
-                    ? Validators.required(v, field: 'Номер карты')
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _discountCategory,
-                decoration: const InputDecoration(
-                  labelText: 'Категория скидки',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _firstNameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Имя *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['firstName'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['firstName'] != null) {
+                      return _serverErrors['firstName'];
+                    }
+                    return Validators.required(v, field: 'Имя');
+                  },
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'обычный', child: Text('Обычный')),
-                  DropdownMenuItem(value: 'серебро', child: Text('Серебро')),
-                  DropdownMenuItem(value: 'золото', child: Text('Золото')),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _emailCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Email *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['email'] ?? _uniqueEmailError,
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['email'] != null) {
+                      return _serverErrors['email'];
+                    }
+                    return Validators.email(v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Телефон *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['phone'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['phone'] != null) {
+                      return _serverErrors['phone'];
+                    }
+                    return Validators.phone(v);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _countryCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Страна *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['country'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['country'] != null) {
+                      return _serverErrors['country'];
+                    }
+                    return Validators.required(v, field: 'Страна');
+                  },
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                SwitchListTile(
+                  title: const Text('Есть сервисная карта'),
+                  subtitle: const Text('Связь 1-к-1'),
+                  value: _hasCard,
+                  onChanged: (v) => setState(() => _hasCard = v),
+                ),
+                if (_hasCard) ...[
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _cardNumberCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Номер карты *',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) => _hasCard
+                        ? Validators.required(v, field: 'Номер карты')
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: _discountCategory,
+                    decoration: const InputDecoration(
+                      labelText: 'Категория скидки',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'обычный',
+                        child: Text('Обычный'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'серебро',
+                        child: Text('Серебро'),
+                      ),
+                      DropdownMenuItem(value: 'золото', child: Text('Золото')),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _discountCategory = v ?? 'обычный'),
+                  ),
                 ],
-                onChanged: (v) =>
-                    setState(() => _discountCategory = v ?? 'обычный'),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

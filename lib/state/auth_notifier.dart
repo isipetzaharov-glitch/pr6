@@ -21,53 +21,68 @@ class AuthNotifier extends ChangeNotifier {
   String? _accessToken;
   String? _refreshToken;
 
+  /// Флаг «восстановление сессии завершено». Используется в main,
+  /// чтобы не строить роутер до окончания проверки токена.
+  bool _restored = false;
+
   AppUser? get user => _user;
   String? get accessToken => _accessToken;
   String? get refreshToken => _refreshToken;
   bool get isAuthenticated => _user != null;
+  bool get restored => _restored;
 
   /// Проверка уровня роли.
   /// has(Role.master) вернёт true и для admin, потому что admin.level > master.level.
   bool has(Role role) => _user != null && _user!.role.level >= role.level;
 
   /// Восстановление сессии при запуске приложения.
+  /// Гарантированно завершается: любые ошибки сети ловятся и логируются.
   Future<void> restore() async {
-    final access = _prefs.getString(_kAccess);
-    final refresh = _prefs.getString(_kRefresh);
-    if (access == null) return;
-
-    _accessToken = access;
-    _refreshToken = refresh;
-
-    // Сразу показываем сохранённого пользователя, чтобы UI не мигал.
-    final cachedUser = _prefs.getString(_kUser);
-    if (cachedUser != null) {
-      try {
-        // Тут простой способ: кладём JSON в prefs и разбираем
-        // через AppUser.fromJson (см. вспомогательную функцию ниже).
-        _user = _parseUser(cachedUser);
-      } catch (_) {
-        _user = null;
-      }
-    }
-
     try {
-      _user = await _api.me();
-      await _persistUser();
-    } on UnauthorizedException {
-      if (refresh != null) {
+      final access = _prefs.getString(_kAccess);
+      final refresh = _prefs.getString(_kRefresh);
+
+      if (access == null) {
+        // Нет токена — сессия не восстановится, но флаг поставить нужно.
+        _restored = true;
+        notifyListeners();
+        return;
+      }
+
+      _accessToken = access;
+      _refreshToken = refresh;
+
+      // Сразу показываем сохранённого пользователя, чтобы UI не мигал.
+      final cachedUser = _prefs.getString(_kUser);
+      if (cachedUser != null) {
         try {
-          await _refreshWith(refresh);
+          _user = _parseUser(cachedUser);
+          notifyListeners();
         } catch (_) {
+          _user = null;
+        }
+      }
+
+      try {
+        _user = await _api.me();
+        await _persistUser();
+      } on UnauthorizedException {
+        if (refresh != null) {
+          try {
+            await _refreshWith(refresh);
+          } catch (_) {
+            await logout();
+          }
+        } else {
           await logout();
         }
-      } else {
-        await logout();
+      } catch (_) {
+        // Сервер недоступен — оставляем сессию как есть, покажем ошибку позже.
       }
-    } catch (_) {
-      // Сервер недоступен — оставляем сессию как есть, покажем ошибку позже.
+    } finally {
+      _restored = true;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> login(String username, String password) async {

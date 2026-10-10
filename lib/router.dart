@@ -25,17 +25,28 @@ import 'state/auth_notifier.dart';
 GoRouter buildRouter(AuthNotifier auth) {
   return GoRouter(
     refreshListenable: auth,
-    initialLocation: '/',
+    // Начинаем с /login. Если пользователь уже авторизован,
+    // глобальный redirect ниже отправит его на /.
+    initialLocation: '/login',
     redirect: (context, state) {
       final loggedIn = auth.isAuthenticated;
       final target = state.matchedLocation;
       final isPublic = target == '/login' || target == '/register';
 
-      if (!loggedIn && !isPublic) {
+      // НЕ редиректим с публичных экранов, если пользователь
+      // не авторизован. Иначе получится бесконечный цикл.
+      if (isPublic) {
+        if (loggedIn) return '/';
+        return null;
+      }
+
+      // Не авторизован и идёт на закрытый экран → на /login,
+      // запомнив исходный адрес.
+      if (!loggedIn) {
         final from = Uri.encodeComponent(state.uri.toString());
         return '/login?from=$from';
       }
-      if (loggedIn && isPublic) return '/';
+
       return null;
     },
     routes: [

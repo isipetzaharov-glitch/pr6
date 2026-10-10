@@ -29,17 +29,9 @@ class AppShell extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Автосервис'),
+        // Убираем длинный текст из AppBar — иначе на узких экранах
+        // AppBar переполняется и падает с RenderFlex overflow.
         actions: [
-          if (auth.user != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  '${auth.user!.fullName} (${auth.user!.role.label})',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            ),
           IconButton(
             tooltip: 'Главная',
             icon: const Icon(Icons.home),
@@ -55,7 +47,35 @@ class AppShell extends StatelessWidget {
           ),
         ],
       ),
-      body: child,
+      body: Column(
+        children: [
+          // Имя и роль — компактной строкой под AppBar,
+          // с обрезкой через ellipsis.
+          if (auth.user != null)
+            Material(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${auth.user!.fullName} (${auth.user!.role.label})',
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: _buildBar(context, isReader, idx),
     );
   }

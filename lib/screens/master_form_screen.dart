@@ -98,53 +98,58 @@ class _MasterFormScreenState extends State<MasterFormScreen> {
           widget.isEditing ? 'Редактирование мастера' : 'Новый мастер',
         ),
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: InputDecoration(
-                labelText: 'ФИО *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['fullName'],
-              ),
-              validator: (v) {
-                if (_serverErrors['fullName'] != null) {
-                  return _serverErrors['fullName'];
-                }
-                return Validators.required(v, field: 'ФИО');
-              },
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'ФИО *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['fullName'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['fullName'] != null) {
+                      return _serverErrors['fullName'];
+                    }
+                    return Validators.required(v, field: 'ФИО');
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _specCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Специализация *',
+                    border: const OutlineInputBorder(),
+                    errorText: _serverErrors['specialization'],
+                  ),
+                  validator: (v) {
+                    if (_serverErrors['specialization'] != null) {
+                      return _serverErrors['specialization'];
+                    }
+                    return Validators.required(v, field: 'Специализация');
+                  },
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save),
+                  label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _specCtrl,
-              decoration: InputDecoration(
-                labelText: 'Специализация *',
-                border: const OutlineInputBorder(),
-                errorText: _serverErrors['specialization'],
-              ),
-              validator: (v) {
-                if (_serverErrors['specialization'] != null) {
-                  return _serverErrors['specialization'];
-                }
-                return Validators.required(v, field: 'Специализация');
-              },
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save),
-              label: Text(widget.isEditing ? 'Сохранить' : 'Создать'),
-            ),
-          ],
+          ),
         ),
       ),
     );
