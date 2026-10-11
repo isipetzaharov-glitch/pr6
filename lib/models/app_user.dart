@@ -40,12 +40,18 @@ class AppUser {
   final String? email;
   final Role role;
 
+  /// ← ПРАВКА: ссылка на клиента автосервиса.
+  /// Заполнено у reader'ов (может создавать заказы только себе),
+  /// для master/admin — null.
+  final int? clientId;
+
   const AppUser({
     required this.id,
     required this.username,
     required this.fullName,
     required this.role,
     this.email,
+    this.clientId, // ← ПРАВКА
   });
 
   Map<String, dynamic> toJson() => {
@@ -54,6 +60,7 @@ class AppUser {
     'fullName': fullName,
     'email': email,
     'role': role.name,
+    'clientId': clientId, // ← ПРАВКА
   };
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
@@ -62,5 +69,6 @@ class AppUser {
     fullName: json['fullName'] as String? ?? '',
     email: json['email'] as String?,
     role: Role.fromString(json['role'] as String?),
+    clientId: (json['clientId'] as num?)?.toInt(), // ← ПРАВКА
   );
 }

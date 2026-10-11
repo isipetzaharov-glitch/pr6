@@ -48,13 +48,15 @@ class DashboardScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Доступно всем авторизованным
-            _tile(
-              context,
-              icon: Icons.build,
-              title: 'Заказы',
-              onTap: () => context.go('/orders'),
-            ),
+            // «Заказы» — для master/admin. Reader и так попадает
+            // на свои заказы через отдельный пункт «Мои заказы».
+            if (user?.role != Role.reader)
+              _tile(
+                context,
+                icon: Icons.build,
+                title: 'Заказы',
+                onTap: () => context.go('/orders'),
+              ),
 
             // Только reader — «мои заказы»
             if (user?.role == Role.reader)

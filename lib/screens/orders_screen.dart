@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../models/app_user.dart';
 import '../models/order_query.dart';
 import '../models/repair_order.dart';
+import '../state/auth_notifier.dart';
 import '../state/order_list_notifier.dart';
 import '../widgets/entity_table.dart';
 import '../widgets/pagination_bar.dart';
@@ -60,6 +62,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     final n = context.watch<OrderListNotifier>();
+    final auth = context.watch<AuthNotifier>();
+
+    // ← ПРАВКА: разделяем права.
+    // canCreate — создавать заказ (FAB). Разрешено всем авторизованным;
+    //             reader создаёт только себе (проверит сервер).
+    // canModify — редактировать/удалять/выбирать строки. Только master+.
+    final canCreate = auth.isAuthenticated;
+    final canModify = auth.has(Role.master);
 
     return Scaffold(
       body: Padding(
@@ -68,8 +78,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           children: [
             _filtersRow(context, n),
             const SizedBox(height: 8),
-            if (n.hasSelection) _selectionBar(context, n),
-            Expanded(child: _body(context, n)),
+            if (n.hasSelection && canModify) _selectionBar(context, n),
+            Expanded(child: _body(context, n, canModify)),
             if (n.status == LoadStatus.success && n.result.items.isNotEmpty)
               PaginationBar(
                 page: n.result.page,
@@ -88,10 +98,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/orders/new'),
-        child: const Icon(Icons.add),
-      ),
+      // FAB показываем всем авторизованным (reader создаёт «себе»).
+      floatingActionButton: canCreate
+          ? FloatingActionButton(
+              tooltip: 'Новый заказ',
+              onPressed: () => context.go('/orders/new'),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -227,7 +241,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  Widget _body(BuildContext context, OrderListNotifier n) {
+  Widget _body(BuildContext context, OrderListNotifier n, bool canModify) {
     if (n.status == LoadStatus.loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -260,12 +274,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
     return LayoutBuilder(
       builder: (context, c) {
-        if (c.maxWidth < 600) return _cardsList(context, n);
+        if (c.maxWidth < 600) return _cardsList(context, n, canModify);
         return EntityTable<RepairOrder>(
           items: n.result.items,
           idOf: (o) => o.id,
-          selected: n.selected,
-          onToggleSelect: n.toggleSelection,
+          selected: canModify ? n.selected : const {},
+          onToggleSelect: canModify ? n.toggleSelection : null,
           sortField: n.query.sortField,
           sortAscending: n.query.sortAscending,
           onSort: (field) {
@@ -310,29 +324,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
               onPressed: () => context.go('/orders/${o.id}'),
               icon: const Icon(Icons.visibility),
             ),
-            IconButton(
-              tooltip: 'Редактировать',
-              onPressed: () => context.go('/orders/${o.id}/edit'),
-              icon: const Icon(Icons.edit),
-            ),
-            IconButton(
-              tooltip: 'Удалить',
-              onPressed: () async {
-                final ok = await _confirm(
-                  context,
-                  'Удалить заказ «${o.title}»?',
-                );
-                if (ok == true) await n.softDeleteOne(o.id);
-              },
-              icon: const Icon(Icons.delete),
-            ),
+            if (canModify)
+              IconButton(
+                tooltip: 'Редактировать',
+                onPressed: () => context.go('/orders/${o.id}/edit'),
+                icon: const Icon(Icons.edit),
+              ),
+            if (canModify)
+              IconButton(
+                tooltip: 'Удалить',
+                onPressed: () async {
+                  final ok = await _confirm(
+                    context,
+                    'Удалить заказ «${o.title}»?',
+                  );
+                  if (ok == true) await n.softDeleteOne(o.id);
+                },
+                icon: const Icon(Icons.delete),
+              ),
           ],
         );
       },
     );
   }
 
-  Widget _cardsList(BuildContext context, OrderListNotifier n) {
+  Widget _cardsList(BuildContext context, OrderListNotifier n, bool canModify) {
     return ListView.separated(
       itemCount: n.result.items.length,
       separatorBuilder: (_, _) => const Divider(height: 1),
@@ -341,31 +357,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
         return Card(
           margin: const EdgeInsets.symmetric(vertical: 6),
           child: ListTile(
-            leading: Checkbox(
-              value: n.selected.contains(o.id),
-              onChanged: (_) => n.toggleSelection(o.id),
-            ),
+            leading: canModify
+                ? Checkbox(
+                    value: n.selected.contains(o.id),
+                    onChanged: (_) => n.toggleSelection(o.id),
+                  )
+                : null,
             title: Text(o.title),
             subtitle: Text(
               'VIN: ${o.vin}\nГод: ${o.year} • ${o.cost.toStringAsFixed(0)} ₽',
             ),
             isThreeLine: true,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => context.go('/orders/${o.id}/edit'),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () async {
-                    final ok = await _confirm(context, 'Удалить заказ?');
-                    if (ok == true) await n.softDeleteOne(o.id);
-                  },
-                ),
-              ],
-            ),
+            trailing: canModify
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit),
+                        onPressed: () => context.go('/orders/${o.id}/edit'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () async {
+                          final ok = await _confirm(context, 'Удалить заказ?');
+                          if (ok == true) await n.softDeleteOne(o.id);
+                        },
+                      ),
+                    ],
+                  )
+                : null,
             onTap: () => context.go('/orders/${o.id}'),
           ),
         );
@@ -373,9 +393,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
-  /// Диалог подтверждения с использованием dialogContext —
-  /// это гарантирует закрытие именно маршрута диалога,
-  /// даже если он уже был закрыт по Esc или клику вне его области.
   Future<bool?> _confirm(BuildContext context, String text) {
     return showDialog<bool>(
       context: context,

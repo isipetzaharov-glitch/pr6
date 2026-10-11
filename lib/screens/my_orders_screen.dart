@@ -49,6 +49,13 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
     }
   }
 
+  void _openCreate() {
+    debugPrint('=== _openCreate called ===');
+    if (!mounted) return;
+    context.go('/orders/new');
+    debugPrint('=== context.go returned ===');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -62,7 +69,21 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-          ? Center(child: Text(_error!))
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                  const SizedBox(height: 8),
+                  Text(_error!),
+                  const SizedBox(height: 8),
+                  FilledButton(
+                    onPressed: _load,
+                    child: const Text('Повторить'),
+                  ),
+                ],
+              ),
+            )
           : _orders.isEmpty
           ? const Center(child: Text('Заказов пока нет'))
           : ListView.separated(
@@ -74,9 +95,17 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                   title: Text(o.title),
                   subtitle: Text('VIN: ${o.vin} • ${o.status}'),
                   trailing: Text('${o.cost.toStringAsFixed(0)} ₽'),
+                  onTap: () => context.go('/orders/${o.id}'),
                 );
               },
             ),
+      // Самая простая форма FAB — исключаем tooltip/extended.
+      // Явно задаём heroTag, чтобы не конфликтовал с другими FAB.
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'fab_my_orders',
+        onPressed: _openCreate,
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }

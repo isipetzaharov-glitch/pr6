@@ -4,8 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../core/api_exceptions.dart';
+import '../logic/discount.dart';
+import '../models/app_user.dart';
+import '../models/client.dart';
 import '../models/repair_order.dart';
 import '../repositories/order_repository.dart';
+import '../state/auth_notifier.dart';
 import '../state/dictionaries_notifier.dart';
 import '../utils/validators.dart';
 
@@ -27,9 +31,17 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   final _costCtrl = TextEditingController();
 
   int? _clientId;
+  Client? _selectedClient;
   int? _masterId;
   List<int> _serviceIds = [];
   String _status = 'new';
+
+  /// true, если текущий пользователь — reader.
+  /// Reader создаёт заказ только на себя и НЕ задаёт цену/статус:
+  ///   - клиент фиксирован,
+  ///   - стоимость скрыта (её поставит мастер),
+  ///   - статус всегда 'new'.
+  bool _isReader = false;
 
   bool _loading = true;
   bool _saving = false;
@@ -47,8 +59,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
   Future<void> _load() async {
     final dict = context.read<DictionariesNotifier>();
     final repo = context.read<OrderRepository>();
+    final auth = context.read<AuthNotifier>();
 
     await dict.ensureLoaded();
+
+    _isReader = auth.user?.role == Role.reader;
 
     if (widget.isEditing) {
       try {
@@ -63,12 +78,36 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
           _masterId = order.masterId;
           _serviceIds = [...order.serviceIds];
           _status = order.status;
+
+          try {
+            _selectedClient = dict.clients.firstWhere(
+              (c) => c.id == order.clientId,
+            );
+          } catch (_) {
+            _selectedClient = null;
+          }
         } else {
           _loadError = 'Заказ не найден';
         }
       } on ApiException catch (e) {
         if (!mounted) return;
         _loadError = e.message;
+      }
+    } else if (_isReader) {
+      // Reader создаёт заказ только на себя.
+      final myId = auth.user?.clientId;
+      if (myId == null) {
+        _loadError = 'Учётная запись не привязана к клиенту автосервиса';
+      } else {
+        _clientId = myId;
+        try {
+          _selectedClient = dict.clients.firstWhere((c) => c.id == myId);
+        } catch (_) {
+          _selectedClient = null;
+        }
+        // Цена и статус — не его забота.
+        _costCtrl.text = '0';
+        _status = 'new';
       }
     }
 
@@ -91,7 +130,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
 
   void _goBack() {
     if (!mounted) return;
-    GoRouter.of(context).go('/orders');
+    if (_isReader) {
+      GoRouter.of(context).go('/my-orders');
+    } else {
+      GoRouter.of(context).go('/orders');
+    }
   }
 
   Future<void> _save() async {
@@ -110,6 +153,14 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
       return;
     }
 
+    final auth = context.read<AuthNotifier>();
+    // Для reader жёстко фиксируем clientId, cost и status.
+    final effectiveClientId = _isReader ? auth.user!.clientId! : _clientId!;
+    final effectiveCost = _isReader
+        ? 0.0
+        : double.parse(_costCtrl.text.replaceAll(',', '.'));
+    final effectiveStatus = _isReader ? 'new' : _status;
+
     final repo = context.read<OrderRepository>();
     setState(() => _saving = true);
 
@@ -119,11 +170,11 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
         title: _titleCtrl.text.trim(),
         vin: _vinCtrl.text.trim(),
         year: int.parse(_yearCtrl.text),
-        clientId: _clientId!,
+        clientId: effectiveClientId,
         masterId: _masterId!,
         serviceIds: _serviceIds,
-        cost: double.parse(_costCtrl.text.replaceAll(',', '.')),
-        status: _status,
+        cost: effectiveCost,
+        status: effectiveStatus,
       );
       if (widget.isEditing) {
         await repo.update(order);
@@ -273,24 +324,60 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
                       return Validators.intRange(v, 1970, 2100, field: 'Год');
                     },
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _costCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+
+                  // ← ПРАВКА: для reader'а поле «Стоимость» скрыто —
+                  // цену поставит мастер/admin при обработке заказа.
+                  if (!_isReader) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _costCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Стоимость, ₽ *',
+                        border: const OutlineInputBorder(),
+                        errorText: _serverErrors['cost'],
+                      ),
+                      validator: (v) {
+                        if (_serverErrors['cost'] != null) {
+                          return _serverErrors['cost'];
+                        }
+                        return Validators.positiveDouble(v, field: 'Стоимость');
+                      },
                     ),
-                    decoration: InputDecoration(
-                      labelText: 'Стоимость, ₽ *',
-                      border: const OutlineInputBorder(),
-                      errorText: _serverErrors['cost'],
+                    _CostSummary(
+                      baseCost: double.tryParse(
+                        _costCtrl.text.replaceAll(',', '.'),
+                      ),
+                      discountCategory: _selectedClient?.card?.discountCategory,
                     ),
-                    validator: (v) {
-                      if (_serverErrors['cost'] != null) {
-                        return _serverErrors['cost'];
-                      }
-                      return Validators.positiveDouble(v, field: 'Стоимость');
-                    },
-                  ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, size: 20),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Стоимость и статус заказа определит мастер '
+                              'после осмотра автомобиля.',
+                              style: TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   const SizedBox(height: 16),
                   const Divider(),
@@ -300,25 +387,44 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
                   ),
                   const SizedBox(height: 12),
 
+                  // Для reader'а дропдаун «Клиент» заблокирован.
                   DropdownButtonFormField<int>(
                     initialValue: _clientId,
                     decoration: InputDecoration(
                       labelText: 'Клиент *',
                       border: const OutlineInputBorder(),
                       errorText: _serverErrors['clientId'],
+                      helperText: _isReader
+                          ? 'Заказ оформляется только на вас'
+                          : null,
                     ),
-                    items: dict.clients
-                        .map(
-                          (c) => DropdownMenuItem(
-                            value: c.id,
-                            child: Text(c.fullName),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      setState(() => _clientId = v);
-                      _markDirty();
-                    },
+                    items: _isReader
+                        ? [
+                            if (_selectedClient != null)
+                              DropdownMenuItem(
+                                value: _selectedClient!.id,
+                                child: Text(_selectedClient!.fullName),
+                              ),
+                          ]
+                        : dict.clients
+                              .map(
+                                (c) => DropdownMenuItem(
+                                  value: c.id,
+                                  child: Text(c.fullName),
+                                ),
+                              )
+                              .toList(),
+                    onChanged: _isReader
+                        ? null
+                        : (v) {
+                            setState(() {
+                              _clientId = v;
+                              _selectedClient = v == null
+                                  ? null
+                                  : dict.clients.firstWhere((c) => c.id == v);
+                            });
+                            _markDirty();
+                          },
                     validator: (v) => v == null ? 'Выберите клиента' : null,
                   ),
                   const SizedBox(height: 12),
@@ -384,14 +490,19 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
                       );
                     },
                   ),
-                  const SizedBox(height: 12),
 
+                  // ← ПРАВКА: для reader'а «Статус» заблокирован на 'new'.
+                  // Он физически не может поставить «в работе» или «завершён».
+                  const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: _status,
+                    initialValue: _isReader ? 'new' : _status,
                     decoration: InputDecoration(
                       labelText: 'Статус *',
                       border: const OutlineInputBorder(),
                       errorText: _serverErrors['status'],
+                      helperText: _isReader
+                          ? 'Новый заказ всегда начинается со статуса «Новый»'
+                          : null,
                     ),
                     items: const [
                       DropdownMenuItem(value: 'new', child: Text('Новый')),
@@ -401,10 +512,12 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
                       ),
                       DropdownMenuItem(value: 'done', child: Text('Завершён')),
                     ],
-                    onChanged: (v) {
-                      setState(() => _status = v ?? 'new');
-                      _markDirty();
-                    },
+                    onChanged: _isReader
+                        ? null // заблокировано
+                        : (v) {
+                            setState(() => _status = v ?? 'new');
+                            _markDirty();
+                          },
                   ),
                   const SizedBox(height: 24),
 
@@ -424,6 +537,60 @@ class _OrderFormScreenState extends State<OrderFormScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CostSummary extends StatelessWidget {
+  final double? baseCost;
+  final String? discountCategory;
+
+  const _CostSummary({required this.baseCost, required this.discountCategory});
+
+  @override
+  Widget build(BuildContext context) {
+    if (baseCost == null || baseCost! <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final rate = DiscountCalculator.rateFor(discountCategory);
+    final discount = DiscountCalculator.discountAmount(
+      baseCost: baseCost!,
+      discountCategory: discountCategory,
+    );
+    final total = DiscountCalculator.finalCost(
+      baseCost: baseCost!,
+      discountCategory: discountCategory,
+    );
+
+    final label = discountCategory == null
+        ? 'Без карты (0%)'
+        : 'Карта «$discountCategory» (${(rate * 100).toStringAsFixed(0)}%)';
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, left: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Категория скидки: $label',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Скидка: ${discount.toStringAsFixed(2)} ₽',
+            style: const TextStyle(fontSize: 13),
+          ),
+          Text(
+            'Итого к оплате: ${total.toStringAsFixed(2)} ₽',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: Colors.indigo,
+            ),
+          ),
+        ],
       ),
     );
   }

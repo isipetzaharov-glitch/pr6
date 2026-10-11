@@ -25,23 +25,17 @@ import 'state/auth_notifier.dart';
 GoRouter buildRouter(AuthNotifier auth) {
   return GoRouter(
     refreshListenable: auth,
-    // Начинаем с /login. Если пользователь уже авторизован,
-    // глобальный redirect ниже отправит его на /.
     initialLocation: '/login',
     redirect: (context, state) {
       final loggedIn = auth.isAuthenticated;
       final target = state.matchedLocation;
       final isPublic = target == '/login' || target == '/register';
 
-      // НЕ редиректим с публичных экранов, если пользователь
-      // не авторизован. Иначе получится бесконечный цикл.
       if (isPublic) {
         if (loggedIn) return '/';
         return null;
       }
 
-      // Не авторизован и идёт на закрытый экран → на /login,
-      // запомнив исходный адрес.
       if (!loggedIn) {
         final from = Uri.encodeComponent(state.uri.toString());
         return '/login?from=$from';
@@ -62,25 +56,37 @@ GoRouter buildRouter(AuthNotifier auth) {
           // ---- Главная ----
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
 
-          // ---- Экран отказа — доступен любому авторизованному ----
+          // ---- Экран отказа ----
           GoRoute(
             path: '/forbidden',
             builder: (_, _) => const ForbiddenScreen(),
           ),
 
           // ---- Заказы ----
+          // Без redirect: reader тоже может сюда попасть и увидит
+          // только свои заказы (сервер фильтрует по clientId).
+          // Reader'у удобнее через /my-orders, но и /orders ему
+          // не запрещён — просто список будет тот же.
           GoRoute(
             path: '/orders',
             builder: (context, state) =>
                 OrdersScreen(urlParams: state.uri.queryParameters),
             routes: [
+              // Создание — всем авторизованным:
+              //   master/admin — на любого клиента,
+              //   reader      — только на себя (сервер принудительно
+              //                 подставит clientId).
               GoRoute(path: 'new', builder: (_, _) => const OrderFormScreen()),
+              // Редактирование — только master и admin.
               GoRoute(
                 path: ':id/edit',
+                redirect: (_, _) => auth.has(Role.master) ? null : '/forbidden',
                 builder: (_, s) => OrderFormScreen(
                   id: int.tryParse(s.pathParameters['id'] ?? ''),
                 ),
               ),
+              // Просмотр карточки — всем авторизованным
+              // (сервер не даст reader'у чужой заказ).
               GoRoute(
                 path: ':id',
                 builder: (_, s) =>

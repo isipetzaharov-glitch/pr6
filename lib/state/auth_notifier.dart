@@ -17,12 +17,18 @@ class AuthNotifier extends ChangeNotifier {
 
   AuthNotifier(this._prefs, this._api);
 
+  /// Временный конструктор для widget-тестов.
+  /// Позволяет подсунуть готового пользователя без сети и токенов.
+  AuthNotifier.testUser(this._prefs, this._api, AppUser user) {
+    _user = user;
+    _restored = true;
+  }
+
   AppUser? _user;
   String? _accessToken;
   String? _refreshToken;
 
-  /// Флаг «восстановление сессии завершено». Используется в main,
-  /// чтобы не строить роутер до окончания проверки токена.
+  /// Флаг «восстановление сессии завершено».
   bool _restored = false;
 
   AppUser? get user => _user;
@@ -32,18 +38,15 @@ class AuthNotifier extends ChangeNotifier {
   bool get restored => _restored;
 
   /// Проверка уровня роли.
-  /// has(Role.master) вернёт true и для admin, потому что admin.level > master.level.
   bool has(Role role) => _user != null && _user!.role.level >= role.level;
 
   /// Восстановление сессии при запуске приложения.
-  /// Гарантированно завершается: любые ошибки сети ловятся и логируются.
   Future<void> restore() async {
     try {
       final access = _prefs.getString(_kAccess);
       final refresh = _prefs.getString(_kRefresh);
 
       if (access == null) {
-        // Нет токена — сессия не восстановится, но флаг поставить нужно.
         _restored = true;
         notifyListeners();
         return;
@@ -52,7 +55,6 @@ class AuthNotifier extends ChangeNotifier {
       _accessToken = access;
       _refreshToken = refresh;
 
-      // Сразу показываем сохранённого пользователя, чтобы UI не мигал.
       final cachedUser = _prefs.getString(_kUser);
       if (cachedUser != null) {
         try {
@@ -77,7 +79,7 @@ class AuthNotifier extends ChangeNotifier {
           await logout();
         }
       } catch (_) {
-        // Сервер недоступен — оставляем сессию как есть, покажем ошибку позже.
+        // Сервер недоступен — оставляем сессию как есть.
       }
     } finally {
       _restored = true;
@@ -99,17 +101,15 @@ class AuthNotifier extends ChangeNotifier {
     await _prefs.remove(_kRefresh);
     await _prefs.remove(_kUser);
     notifyListeners();
-    // Пробуем сказать серверу, что сессия закрыта.
     if (refresh != null) {
       try {
         await _api.logout(refresh);
       } catch (_) {
-        // Молча, это не критично.
+        // Молча.
       }
     }
   }
 
-  /// Обновление пары токенов. Используется интерсептором и restore().
   Future<void> refreshTokens() async {
     final refresh = _refreshToken;
     if (refresh == null) {
@@ -141,19 +141,18 @@ class AuthNotifier extends ChangeNotifier {
       await _prefs.remove(_kUser);
       return;
     }
-    // Простая сериализация вручную, чтобы не тянуть jsonEncode в этот файл.
+    // clientId пишем через ?? — иначе линтер ругается prefer_if_null_operators.
     await _prefs.setString(
       _kUser,
       '{"id":${u.id},"username":"${u.username}",'
       '"fullName":"${u.fullName}",'
       '"email":${u.email == null ? 'null' : '"${u.email}"'},'
-      '"role":"${u.role.name}"}',
+      '"role":"${u.role.name}",'
+      '"clientId":${u.clientId ?? 'null'}}',
     );
   }
 
   AppUser _parseUser(String raw) {
-    // Примитивный разбор: достаточно для учебного проекта.
-    // В проде — jsonDecode из dart:convert.
     final id = RegExp(r'"id":(\d+)').firstMatch(raw)?.group(1) ?? '0';
     final username =
         RegExp(r'"username":"([^"]*)"').firstMatch(raw)?.group(1) ?? '';
@@ -161,11 +160,14 @@ class AuthNotifier extends ChangeNotifier {
         RegExp(r'"fullName":"([^"]*)"').firstMatch(raw)?.group(1) ?? '';
     final roleStr =
         RegExp(r'"role":"([^"]*)"').firstMatch(raw)?.group(1) ?? 'reader';
+    final clientIdStr = RegExp(r'"clientId":(\d+)').firstMatch(raw)?.group(1);
+
     return AppUser(
       id: int.tryParse(id) ?? 0,
       username: username,
       fullName: fullName,
       role: Role.fromString(roleStr),
+      clientId: clientIdStr == null ? null : int.tryParse(clientIdStr),
     );
   }
 }
